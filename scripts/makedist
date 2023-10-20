@@ -57,7 +57,7 @@ VERSION=
 
 # Update this list with the names of the individual component names
 # 
-DISTNAMES=(npsbroker)
+DISTNAMES=(fm-application-layer)
 
 # handle command line options
 while [ "$1" != "" ]; do 
@@ -100,7 +100,7 @@ while [ "$1" != "" ]; do
         echo "$prog: unsupported option:" $1
         false
         ;;
-    fm-application-api)
+    fm-application-layer)
         # assuming just one distribution
         true
         ;;
@@ -141,11 +141,11 @@ echo '#'
 echo '#########################'
 
 # build the components
-installdir=$BUILD_DIR/fm-application-api
+installdir=$BUILD_DIR/fm-application-layer
 set -x
 mkdir -p $installdir
 
-cp $PACKAGE_DIR/python/* $BUILD_DIR/*
+cp -r $PACKAGE_DIR/python/* $BUILD_DIR/*
 
 # ENTER COMMANDS for creating the dependency file(s)
 #
@@ -163,7 +163,7 @@ fi
 
 echo "bundle creation"
 # Bundle the distribution
-(cd $BUILD_DIR && zip -qr $DIST_DIR/${DISTNAMES[0]}-${vers4fn}.zip fm-application-api)
+(cd $BUILD_DIR && zip -qr $DIST_DIR/${DISTNAMES[0]}-${vers4fn}.zip fm-application-layer)
 
 set +x
 echo Created distribution in dist directory: 
