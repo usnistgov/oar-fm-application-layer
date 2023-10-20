@@ -1,0 +1,5 @@
+
+#all the builds needed for deployment
+*/dist/*
+dist/*
+VERSION
