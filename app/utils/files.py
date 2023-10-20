@@ -79,3 +79,12 @@ def delete_userpermissions(user, directory):
                              auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
                              verify=Config.PROD)
     return response.json()
+
+
+def post_file(file, destination_path):
+    files = {'file': (file.filename, file.stream)}
+    response = requests.post(f"{generic_api_endpoint}/file/{destination_path}",
+                             files=files,
+                             auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+                             verify=Config.PROD)
+    return response.json()
