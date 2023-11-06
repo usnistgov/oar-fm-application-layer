@@ -88,3 +88,10 @@ def post_file(file, destination_path):
                              auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
                              verify=Config.PROD)
     return response.json()
+
+
+def put_scandir(destination_path):
+    response = requests.put(f"{generic_api_endpoint}/scan/directory/{destination_path}",
+                             auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+                             verify=Config.PROD)
+    return response.json()
