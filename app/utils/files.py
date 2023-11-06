@@ -60,15 +60,15 @@ def post_userpermissions(user, permissions, directory):
 
 def get_userpermissions(directory):
     response = requests.get(f"{generic_api_endpoint}/userpermissions/{directory}",
-                             auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
-                             verify=Config.PROD)
+                            auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+                            verify=Config.PROD)
     return response.json()
 
 
 def put_userpermissions(user, permissions, directory):
     response = requests.put(f"{generic_api_endpoint}/userpermissions/{user}/{permissions}/{directory}",
-                             auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
-                             verify=Config.PROD)
+                            auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+                            verify=Config.PROD)
 
     # response may not be json convertible
     return response
@@ -76,22 +76,34 @@ def put_userpermissions(user, permissions, directory):
 
 def delete_userpermissions(user, directory):
     response = requests.delete(f"{generic_api_endpoint}/userpermissions/{user}/{directory}",
-                             auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
-                             verify=Config.PROD)
+                               auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+                               verify=Config.PROD)
     return response.json()
 
 
-def post_file(file, destination_path):
+def post_file(file, directory_path):
     files = {'file': (file.filename, file.stream)}
-    response = requests.post(f"{generic_api_endpoint}/file/{destination_path}",
+    response = requests.post(f"{generic_api_endpoint}/file/{directory_path}",
                              files=files,
                              auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
                              verify=Config.PROD)
     return response.json()
 
 
+def put_file(json_data, file_path):
+    headers = {
+        'Content-Type': 'application/json',
+    }
+    response = requests.put(f"{generic_api_endpoint}/file/{file_path}",
+                            data=json_data,
+                            headers=headers,
+                            auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+                            verify=Config.PROD)
+    return response.json()
+
+
 def put_scandir(destination_path):
     response = requests.put(f"{generic_api_endpoint}/scan/directory/{destination_path}",
-                             auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
-                             verify=Config.PROD)
+                            auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+                            verify=Config.PROD)
     return response.json()
