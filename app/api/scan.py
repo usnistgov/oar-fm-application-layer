@@ -4,6 +4,7 @@
 """
 import uuid
 import json
+import io
 import asyncio
 import threading
 
@@ -61,11 +62,12 @@ class ScanFiles(Resource):
             root_dir = Config.NEXTCLOUD_ROOT_DIR_PATH
             system_dir = os.path.join(root_dir, system_dir)
 
+            # Upload initial report
             filename = 'report.json'
             filepath = os.path.join(system_dir, filename)
-
-            with open(filepath, 'w') as file:
-                json.dump({'nextcloud_scan': fast_scan_data}, file, indent=4)
+            file_content = json.dumps({'nextcloud_scan': fast_scan_data}, indent=4)
+            json_data = io.StringIO(file_content)
+            files.put_file(json_data, filepath)
 
             task_id = str(uuid.uuid4())
             tasks_status[task_id] = {'Status': 'In Progress'}
