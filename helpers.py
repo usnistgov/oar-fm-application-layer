@@ -1,6 +1,8 @@
 """
 helpers methods
 """
+import hashlib
+import xml.etree.ElementTree as ET
 
 
 def get_permissions_string(permission_number):
@@ -68,3 +70,64 @@ def extract_permissions(response):
     permissions = int(element.split('<')[0].replace("\\", ""))
 
     return permissions
+
+
+def parse_nextcloud_scan_xml(scan_result):
+    # namespaces
+    ns = {
+        'd': 'DAV:',
+        'oc': 'http://owncloud.org/ns',
+        'nc': 'http://nextcloud.org/ns'
+    }
+
+    # Convert the list to a single string
+    xml_string = ''.join(scan_result)
+
+    root = ET.fromstring(xml_string)
+    files = []
+
+    for response in root.findall('d:response', ns):
+        file_info = {}
+
+        # Extract href which is the path of the file/directory
+        href = response.find('d:href', ns)
+        if href is not None:
+            file_info['path'] = href.text
+
+        # Extract properties
+        for propstat in response.findall('d:propstat', ns):
+            prop = propstat.find('d:prop', ns)
+            if prop is not None:
+                for child in prop:
+                    # Remove namespace from tag for clean representation
+                    tag = child.tag.split('}')[-1]
+                    file_info[tag] = child.text
+
+        files.append(file_info)
+
+    return files
+
+
+def calculate_checksum(file_path: str, algorithm: str = "sha256") -> str:
+    """Calculate the checksum of a file.
+
+    Args:
+        file_path (str): Path to the file.
+        algorithm (str): Algorithm to use for checksum. Currently only supports "sha256".
+
+    Returns:
+        str: The computed checksum.
+
+    Raises:
+        ValueError: If an unsupported algorithm is provided.
+    """
+    if algorithm == "sha256":
+        hasher = hashlib.sha256()
+    else:
+        raise ValueError(f"Unsupported algorithm: {algorithm}")
+
+    with open(file_path, 'rb') as file:
+        for chunk in iter(lambda: file.read(4096), b""):
+            hasher.update(chunk)
+
+    return hasher.hexdigest()
