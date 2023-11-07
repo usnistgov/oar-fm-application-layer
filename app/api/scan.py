@@ -4,12 +4,13 @@
 """
 import uuid
 import json
-import io
+import tempfile
 import asyncio
 import threading
+import os
 
 from helpers import parse_nextcloud_scan_xml, calculate_checksum
-import os
+from flask import current_app, copy_current_request_context
 from flask_jwt_extended import jwt_required
 from flask_restful import Resource
 from config import Config
@@ -39,12 +40,28 @@ class FileManagerDirectoryScanner(DirectoryScanner):
     """Implements DirectoryScanner for the file manager."""
 
     def fast_scan(self, dir_path: str):
-        """Scan Directory with Nextcloud scanning."""
+        """
+        Implements a fast scan by interacting with Nextcloud's scan functionality.
+
+        Args:
+            dir_path (str): The directory path to be scanned.
+
+        Returns:
+            dict: The result of the fast scan parsed from the Nextcloud scan XML output.
+        """
         scan_result = files.put_scandir(dir_path)
         return parse_nextcloud_scan_xml(scan_result)
 
     async def slow_scan(self, dir_path: str):
-        """Scan from Disk to calculate checksums."""
+        """
+        Implements a slow, thorough scan by calculating checksums of files on the disk.
+
+        Args:
+            dir_path (str): The directory path to be scanned.
+
+        Returns:
+            dict: A dictionary where keys are file paths and values are their checksums.
+        """
         checksums = {}
         for dirpath, dirnames, filenames in os.walk(dir_path):
             for filename in filenames:
@@ -58,7 +75,16 @@ class ScanFiles(Resource):
 
     @jwt_required()
     def put(self, record_name):
-        """Launch the scanning process of files associated with a record space."""
+        """
+        Launch a file scanning process for a given record name. It performs a fast scan first and
+        then launches an asynchronous slow scan.
+
+        Args:
+            record_name (str): The name of the record space to be scanned.
+
+        Returns:
+            tuple: A success response with the status code 200, or an error response with status code 500.
+        """
         try:
             # Instantiate dirs
             parent_dir = f"mds2-{record_name}"
@@ -73,28 +99,37 @@ class ScanFiles(Resource):
             # Upload initial report
             filename = 'report.json'
             file_content = json.dumps({'nextcloud_scan': fast_scan_data}, indent=4)
-            json_data = io.StringIO(file_content)
-            initial_report_file = {'filename': filename, 'stream': json_data}
-            files.post_file(initial_report_file, system_dir)
-            json_data.close()
+            temp_file = tempfile.NamedTemporaryFile(delete=False)
+            try:
+                # Write content as bytes
+                temp_file.write(file_content.encode('utf-8'))
+                # Go back to the beginning of the file
+                temp_file.seek(0)
+                files.post_file(temp_file.name, system_dir, filename)
+            finally:
+                # Close and delete the file
+                temp_file.close()
+                os.unlink(temp_file.name)
 
             # Create task for slow scan status updates
             task_id = str(uuid.uuid4())
             tasks_status[task_id] = {'Status': 'In Progress'}
 
             # Run the slowScan asynchronously using a thread
+            @copy_current_request_context
             def run_slow_scan():
-                # Read files from disk for performance
-                record_dir_from_disk = os.path.join(root_dir_from_disk, record_space)
-                checksums = asyncio.run(scanner.slow_scan(record_dir_from_disk))
-                tasks_status[task_id]['Checksums'] = checksums
-                tasks_status[task_id]['Status'] = 'Completed'
+                with current_app.app_context():
+                    # Read files from disk for performance
+                    record_dir_from_disk = os.path.join(root_dir_from_disk, record_space)
+                    checksums = asyncio.run(scanner.slow_scan(record_dir_from_disk))
+                    tasks_status[task_id]['Checksums'] = checksums
 
-                # Update the report.json file after slow scan
-                report = {'nextcloud_scan': fast_scan_data, 'Checksums': checksums}
-                update_json_data = json.dumps(report, indent=4)
-                filepath = os.path.join(system_dir, filename)
-                files.put_file(update_json_data, filepath)
+                    # Update the report.json file after slow scan
+                    report = {'nextcloud_scan': fast_scan_data, 'Checksums': checksums}
+                    update_json_data = json.dumps(report, indent=4)
+                    filepath = os.path.join(system_dir, filename)
+                    files.put_file(update_json_data, filepath)
+                    tasks_status[task_id]['Status'] = 'Completed'
 
             thread = threading.Thread(target=run_slow_scan)
             thread.start()
@@ -118,7 +153,16 @@ class ScanStatus(Resource):
 
     @jwt_required()
     def get(self, task_id):
-        """Fetches the status of a scanning task given its task ID."""
+        """
+        Retrieves the status of a scanning task using its unique task ID.
+
+        Args:
+            task_id (str): The unique identifier of the scanning task.
+
+        Returns:
+            tuple: The status of the scanning task if found with status code 200,
+            otherwise an error message with status code 404.
+        """
         task_status = tasks_status.get(task_id)
         if task_status:
             return task_status, 200
