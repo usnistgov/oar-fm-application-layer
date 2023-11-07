@@ -4,6 +4,7 @@ Connect with generic layer /files endpoints
 
 import requests
 from flask import current_app
+import os
 from requests.auth import HTTPBasicAuth
 
 from config import Config
@@ -81,13 +82,52 @@ def delete_userpermissions(user, directory):
     return response.json()
 
 
-def post_file(file, directory_path):
-    files = {'file': (file.filename, file.stream)}
-    response = requests.post(f"{generic_api_endpoint}/file/{directory_path}",
-                             files=files,
-                             auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
-                             verify=Config.PROD)
-    return response.json()
+def post_file(file, directory_path, filename=None):
+    """Uploads a file to a specified directory path.
+
+        This function handles uploading by accepting either a file path
+        or a file object and an optional filename for the uploaded file.
+
+        Args:
+            file (str|FileStorage): The file path or file object to upload.
+            directory_path (str): The directory path where the file will be uploaded on the server.
+            filename (str, optional): The filename to be used when uploading the file.
+                                      If not provided and the file is a file object, file.filename is used.
+
+        Returns:
+            dict: A dictionary with the status code and content or json response from the server.
+
+        Raises:
+            ValueError: If filename is not provided and the file object doesn't have a 'filename' attribute.
+        """
+    # Determine whether file is a filepath or a file object
+    if isinstance(file, str):
+        with open(file, 'rb') as file_to_upload:
+            files = {'file': (filename or os.path.basename(file), file_to_upload)}
+            response = requests.post(
+                f"{generic_api_endpoint}/file/{directory_path}",
+                files=files,
+                auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+                verify=Config.PROD
+            )
+    else:
+        # filename must be provided if file doesn't have a 'filename' attribute
+        filename = filename or getattr(file, 'filename', None)
+        if not filename:
+            raise ValueError("Filename must be provided or file object must have a 'filename' attribute")
+        files = {'file': (filename, file.stream)}
+        response = requests.post(
+            f"{generic_api_endpoint}/file/{directory_path}",
+            files=files,
+            auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+            verify=Config.PROD
+        )
+
+    # Check if the response is JSON and return appropriately
+    if response.headers.get('Content-Type') == 'application/json':
+        return response.json()
+    else:
+        return {'status': response.status_code, 'content': response.content}
 
 
 def put_file(json_data, file_path):
