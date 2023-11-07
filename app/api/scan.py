@@ -22,23 +22,29 @@ tasks_status = {}
 
 
 class DirectoryScanner(ABC):
+    """Abstract base class for directory scanning."""
 
     @abstractmethod
     def fast_scan(self, dir_path: str):
+        """Perform quick tasks scan of the given directory."""
         pass
 
     @abstractmethod
     async def slow_scan(self, dir_path: str):
+        """Perform longer tasks scan of the given directory asynchronously."""
         pass
 
 
 class FileManagerDirectoryScanner(DirectoryScanner):
+    """Implements DirectoryScanner for the file manager."""
 
     def fast_scan(self, dir_path: str):
+        """Scan Directory with Nextcloud scanning."""
         scan_result = files.put_scandir(dir_path)
         return parse_nextcloud_scan_xml(scan_result)
 
     async def slow_scan(self, dir_path: str):
+        """Scan from Disk to calculate checksums."""
         checksums = {}
         for dirpath, dirnames, filenames in os.walk(dir_path):
             for filename in filenames:
@@ -48,41 +54,47 @@ class FileManagerDirectoryScanner(DirectoryScanner):
 
 
 class ScanFiles(Resource):
+    """Resource to handle file scanning operations."""
+
     @jwt_required()
     def put(self, record_name):
+        """Launch the scanning process of files associated with a record space."""
         try:
             # Instantiate dirs
             parent_dir = f"mds2-{record_name}"
             system_dir = f"{parent_dir}/mds2-{record_name}-sys"
             record_space = f"{parent_dir}/mds2-{record_name}"
+            root_dir_from_disk = Config.NEXTCLOUD_ROOT_DIR_PATH
 
+            # Nextcloud scanning
             scanner = FileManagerDirectoryScanner()
             fast_scan_data = scanner.fast_scan(record_space)
 
-            root_dir = Config.NEXTCLOUD_ROOT_DIR_PATH
-            system_dir = os.path.join(root_dir, system_dir)
-
             # Upload initial report
             filename = 'report.json'
-            filepath = os.path.join(system_dir, filename)
             file_content = json.dumps({'nextcloud_scan': fast_scan_data}, indent=4)
             json_data = io.StringIO(file_content)
-            files.put_file(json_data, filepath)
+            initial_report_file = {'filename': filename, 'stream': json_data}
+            files.post_file(initial_report_file, system_dir)
+            json_data.close()
 
+            # Create task for slow scan status updates
             task_id = str(uuid.uuid4())
             tasks_status[task_id] = {'Status': 'In Progress'}
-            record_fullpath = os.path.join(root_dir, record_space)
 
             # Run the slowScan asynchronously using a thread
             def run_slow_scan():
-                checksums = asyncio.run(scanner.slow_scan(record_fullpath))
+                # Read files from disk for performance
+                record_dir_from_disk = os.path.join(root_dir_from_disk, record_space)
+                checksums = asyncio.run(scanner.slow_scan(record_dir_from_disk))
                 tasks_status[task_id]['Checksums'] = checksums
                 tasks_status[task_id]['Status'] = 'Completed'
 
                 # Update the report.json file after slow scan
                 report = {'nextcloud_scan': fast_scan_data, 'Checksums': checksums}
-                with open(filepath, 'w') as file:
-                    json.dump(report, file, indent=4)
+                update_json_data = json.dumps(report, indent=4)
+                filepath = os.path.join(system_dir, filename)
+                files.put_file(update_json_data, filepath)
 
             thread = threading.Thread(target=run_slow_scan)
             thread.start()
@@ -95,18 +107,18 @@ class ScanFiles(Resource):
 
             return success_response, 200
 
-        except Exception as error:
-            error_response = {
-                'error': 'Bad Request',
-                'message': str(error)
-            }
-            return error_response, 400
+        except IOError as e:
+            return {'error': 'I/O Error', 'message': str(e)}, 500
+        except Exception as e:
+            return {'error': 'Unexpected Error', 'message': str(e)}, 500
 
 
 class ScanStatus(Resource):
+    """Resource to handle the retrieval of scanning task status."""
 
     @jwt_required()
     def get(self, task_id):
+        """Fetches the status of a scanning task given its task ID."""
         task_status = tasks_status.get(task_id)
         if task_status:
             return task_status, 200
