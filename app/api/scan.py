@@ -163,7 +163,7 @@ class ScanFiles(Resource):
             tuple: Scanning task status and content with status code 200, or error message with status code 404.
         """
         try:
-            scan = scans_states.get(scan_id)
+            scan = scans_states[scan_id]
 
             if scan is not None:
                 success_response = {
@@ -171,14 +171,14 @@ class ScanFiles(Resource):
                     'message': scan,
                 }
                 return success_response, 200
-            return {'error': KeyError, 'message': f"Scanning '{scan_id}' Not Found"}, 404
+            return {'error': 'Key Error!', 'message': f"Scanning '{scan_id}' Not Found"}, 404
         except Exception as e:
             return {'error': 'Unexpected Error', 'message': str(e)}, 500
 
     @jwt_required()
     def delete(self, scan_id):
         """
-        Deletes a scanning task report and removes its record using its unique ID.
+        Deletes a scanning task report from the global dict using its unique ID.
 
         Args:
             scan_id (str): Unique identifier of the scanning task.
