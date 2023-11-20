@@ -50,7 +50,7 @@ class Permissions(Resource):
                 message = nextcloud_permission
                 raise Exception(message)
 
-            dir_name = f"mds2-{record_name}/mds2-{record_name}"
+            dir_name = f"{record_name}/{record_name}"
 
             # Ensure user has no permissions on record
             response = files.get_userpermissions(dir_name)
@@ -87,7 +87,7 @@ class Permissions(Resource):
     @jwt_required()
     def get(self, user_name, record_name):
         try:
-            dir_name = f"mds2-{record_name}/mds2-{record_name}"
+            dir_name = f"{record_name}/{record_name}"
             response = files.get_userpermissions(dir_name)
 
             root = self._parse_xml_response(response)
@@ -125,7 +125,7 @@ class Permissions(Resource):
                 message = nextcloud_permission
                 raise Exception(message)
 
-            dir_name = f"mds2-{record_name}/mds2-{record_name}"
+            dir_name = f"{record_name}/{record_name}"
             response = files.put_userpermissions(user_name, nextcloud_permission, dir_name)
 
             user_permissions = get_permissions_string(extract_permissions(response))
@@ -154,7 +154,7 @@ class Permissions(Resource):
     @jwt_required()
     def delete(self, user_name, record_name):
         try:
-            dir_name = f"mds2-{record_name}/mds2-{record_name}"
+            dir_name = f"{record_name}/{record_name}"
             users_permissions = files.delete_userpermissions(user_name, dir_name)
 
             if 'error' in users_permissions:
