@@ -139,7 +139,7 @@ class ScanFiles(Resource):
             thread.start()
 
             success_response = {
-                'success': 'PUT',
+                'success': 'POST',
                 'message': 'Scanning successfully started!',
                 'scan_id': scan_id
             }
