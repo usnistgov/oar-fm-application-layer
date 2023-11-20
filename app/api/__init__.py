@@ -25,7 +25,7 @@ api.add_resource(File,
                  "/file/<string:destination_path>")
 api.add_resource(ScanFiles, 
                  "/scans/<string:record_name>",
-                 "/scans/<string:scan_id>"
+                 "/scans/id/<string:scan_id>"
                 )
 api.add_resource(Permissions,
                  "/permissions/<string:user_name>/<string:record_name>/<string:permission_type>",
