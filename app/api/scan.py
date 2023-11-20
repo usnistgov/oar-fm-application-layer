@@ -1,6 +1,5 @@
 """
-/scan-files endpoint returns details about record space files
-/scan-status endpoint returns the status of async scan task
+/scans endpoint manages record space files scanning operations
 """
 import uuid
 import json
@@ -18,8 +17,8 @@ from abc import ABC, abstractmethod
 
 from app.utils import files
 
-# A dictionary to store the status of multiple tasks
-tasks_status = {}
+# Global dictionary to keep track of scanning job statuses
+scans_states = {}
 
 
 class DirectoryScanner(ABC):
@@ -27,12 +26,12 @@ class DirectoryScanner(ABC):
 
     @abstractmethod
     def fast_scan(self, dir_path: str):
-        """Perform quick tasks scan of the given directory."""
+        """Abstract method to perform a quick scan of a directory."""
         pass
 
     @abstractmethod
     async def slow_scan(self, dir_path: str):
-        """Perform longer tasks scan of the given directory asynchronously."""
+        """Abstract asynchronous method for a longer scan of a directory."""
         pass
 
 
@@ -41,26 +40,28 @@ class FileManagerDirectoryScanner(DirectoryScanner):
 
     def fast_scan(self, dir_path: str):
         """
-        Implements a fast scan by interacting with Nextcloud's scan functionality.
+        Perform a fast scan using Nextcloud's scanning functionality.
+        Parses the scan result from Nextcloud's XML output.
 
         Args:
-            dir_path (str): The directory path to be scanned.
+            dir_path (str): Path of the directory to be scanned.
 
         Returns:
-            dict: The result of the fast scan parsed from the Nextcloud scan XML output.
+            dict: Parsed result of the fast scan.
         """
         scan_result = files.put_scandir(dir_path)
         return parse_nextcloud_scan_xml(scan_result)
 
     async def slow_scan(self, dir_path: str):
         """
-        Implements a slow, thorough scan by calculating checksums of files on the disk.
+        Perform a custom scan by calculating file checksums.
+        This method is asynchronous and scans each file in the given directory.
 
         Args:
-            dir_path (str): The directory path to be scanned.
+            dir_path (str): Path of the directory to be scanned.
 
         Returns:
-            dict: A dictionary where keys are file paths and values are their checksums.
+            dict: Dictionary mapping file paths to their checksums.
         """
         checksums = {}
         for dirpath, dirnames, filenames in os.walk(dir_path):
@@ -74,30 +75,37 @@ class ScanFiles(Resource):
     """Resource to handle file scanning operations."""
 
     @jwt_required()
-    def put(self, record_name):
+    def post(self, record_name):
         """
-        Launch a file scanning process for a given record name. It performs a fast scan first and
-        then launches an asynchronous slow scan.
+        Starts a file scanning process for a specific record.
+        Initiates a fast scan followed by an asynchronous slow scan.
 
         Args:
-            record_name (str): The name of the record space to be scanned.
+            record_name (str): Name of the record space to scan.
 
         Returns:
-            tuple: A success response with the status code 200, or an error response with status code 500.
+            tuple: Success response with status code 200, or error response with status code 500.
         """
         try:
+            # Create task for this scanning task
+            scan_id = str(uuid.uuid4())
+            scans_states[scan_id] = {'Status': 'In Progress'}
+
             # Instantiate dirs
-            parent_dir = f"mds2-{record_name}"
-            system_dir = f"{parent_dir}/mds2-{record_name}-sys"
-            record_space = f"{parent_dir}/mds2-{record_name}"
+            parent_dir = record_name
+            system_dir = f"{parent_dir}/{record_name}-sys"
+            record_space = f"{parent_dir}/{record_name}"
             root_dir_from_disk = Config.NEXTCLOUD_ROOT_DIR_PATH
 
             # Nextcloud scanning
             scanner = FileManagerDirectoryScanner()
             fast_scan_data = scanner.fast_scan(record_space)
 
+            # Update the scanning state
+            scans_states[scan_id]['nextcloud_scan'] = fast_scan_data
+
             # Upload initial report
-            filename = 'report.json'
+            filename = f"report-{scan_id}.json"
             file_content = json.dumps({'nextcloud_scan': fast_scan_data}, indent=4)
             temp_file = tempfile.NamedTemporaryFile(delete=False)
             try:
@@ -111,10 +119,6 @@ class ScanFiles(Resource):
                 temp_file.close()
                 os.unlink(temp_file.name)
 
-            # Create task for slow scan status updates
-            task_id = str(uuid.uuid4())
-            tasks_status[task_id] = {'Status': 'In Progress'}
-
             # Run the slowScan asynchronously using a thread
             @copy_current_request_context
             def run_slow_scan():
@@ -122,14 +126,14 @@ class ScanFiles(Resource):
                     # Read files from disk for performance
                     record_dir_from_disk = os.path.join(root_dir_from_disk, record_space)
                     checksums = asyncio.run(scanner.slow_scan(record_dir_from_disk))
-                    tasks_status[task_id]['Checksums'] = checksums
+                    scans_states[scan_id]['Checksums'] = checksums
 
                     # Update the report.json file after slow scan
                     report = {'nextcloud_scan': fast_scan_data, 'Checksums': checksums}
                     update_json_data = json.dumps(report, indent=4)
                     filepath = os.path.join(system_dir, filename)
                     files.put_file(update_json_data, filepath)
-                    tasks_status[task_id]['Status'] = 'Completed'
+                    scans_states[scan_id]['Status'] = 'Completed'
 
             thread = threading.Thread(target=run_slow_scan)
             thread.start()
@@ -137,7 +141,7 @@ class ScanFiles(Resource):
             success_response = {
                 'success': 'PUT',
                 'message': 'Scanning successfully started!',
-                'task_id': task_id
+                'scan_id': scan_id
             }
 
             return success_response, 200
@@ -147,24 +151,47 @@ class ScanFiles(Resource):
         except Exception as e:
             return {'error': 'Unexpected Error', 'message': str(e)}, 500
 
-
-class ScanStatus(Resource):
-    """Resource to handle the retrieval of scanning task status."""
-
     @jwt_required()
-    def get(self, task_id):
+    def get(self, scan_id):
         """
-        Retrieves the status of a scanning task using its unique task ID.
+        Retrieves the current state and details of a scanning task by its ID.
 
         Args:
-            task_id (str): The unique identifier of the scanning task.
+            scan_id (str): Unique identifier of the scanning task.
 
         Returns:
-            tuple: The status of the scanning task if found with status code 200,
-            otherwise an error message with status code 404.
+            tuple: Scanning task status and content with status code 200, or error message with status code 404.
         """
-        task_status = tasks_status.get(task_id)
-        if task_status:
-            return task_status, 200
-        else:
-            return {'error': 'Not Found', 'message': 'Task ID not found!'}, 404
+        try:
+            scan = scans_states.get(scan_id)
+
+            if scan is not None:
+                success_response = {
+                    'success': 'GET',
+                    'message': scan,
+                }
+                return success_response, 200
+            return {'error': KeyError, 'message': f"Scanning '{scan_id}' Not Found"}, 404
+        except Exception as e:
+            return {'error': 'Unexpected Error', 'message': str(e)}, 500
+
+    @jwt_required()
+    def delete(self, scan_id):
+        """
+        Deletes a scanning task report and removes its record using its unique ID.
+
+        Args:
+            scan_id (str): Unique identifier of the scanning task.
+
+        Returns:
+            tuple: Success response with status code 200, or error response with status code 500.
+        """
+        try:
+            del scans_states[scan_id]
+            success_response = {
+                'success': 'DELETE',
+                'message': f"Scanning '{scan_id}' deleted successfully!",
+            }
+            return success_response, 200
+        except KeyError:
+            return {'error': 'Key Error!', 'message': f"Scanning '{scan_id}' Not Found"}, 404
