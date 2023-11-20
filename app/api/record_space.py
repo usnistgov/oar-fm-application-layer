@@ -15,9 +15,9 @@ class RecordSpace(Resource):
     def post(self, user_name, record_name):
         try:
             # Instantiate dirs
-            parent_dir = f"mds2-{record_name}"
-            system_dir = f"{parent_dir}/mds2-{record_name}-sys"
-            user_dir = f"{parent_dir}/mds2-{record_name}"
+            parent_dir = record_name
+            system_dir = f"{parent_dir}/{record_name}-sys"
+            user_dir = f"{parent_dir}/{record_name}"
 
             # Check if parent_dir exists
             if files.is_directory(parent_dir):
@@ -61,7 +61,7 @@ class RecordSpace(Resource):
     @jwt_required()
     def get(self, record_name):
         try:
-            dir_name = f"mds2-{record_name}/mds2-{record_name}"
+            dir_name = f"{record_name}/{record_name}"
             response = files.get_directory(dir_name)
             response = ''.join(response)
 
@@ -107,7 +107,7 @@ class RecordSpace(Resource):
     @jwt_required()
     def delete(self, record_name):
         try:
-            dir_name = f"mds2-{record_name}"
+            dir_name = record_name
             response = files.delete_directory(dir_name)
 
             if 'status' in response:
