@@ -106,6 +106,7 @@ class ScanFiles(Resource):
 
             # Upload initial report
             filename = f"report-{scan_id}.json"
+            scans_states[scan_id]['report_location'] = os.path.join(system_dir, filename)
             file_content = json.dumps({'nextcloud_scan': fast_scan_data}, indent=4)
             temp_file = tempfile.NamedTemporaryFile(delete=False)
             try:
@@ -178,7 +179,7 @@ class ScanFiles(Resource):
     @jwt_required()
     def delete(self, scan_id):
         """
-        Deletes a scanning task report from the global dict using its unique ID.
+        Deletes a scanning task report from the global dict and the file manager using its unique ID.
 
         Args:
             scan_id (str): Unique identifier of the scanning task.
@@ -187,7 +188,10 @@ class ScanFiles(Resource):
             tuple: Success response with status code 200, or error response with status code 500.
         """
         try:
+            file_path = scans_states[scan_id]['report_location']
+            files.delete_file(file_path)
             del scans_states[scan_id]
+
             success_response = {
                 'success': 'DELETE',
                 'message': f"Scanning '{scan_id}' deleted successfully!",
