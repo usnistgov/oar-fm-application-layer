@@ -1,5 +1,5 @@
 """
-Connect with generic layer /files endpoints
+Generic layer client for /files endpoints
 """
 
 import requests
@@ -137,6 +137,13 @@ def put_file(json_data, file_path):
     response = requests.put(f"{generic_api_endpoint}/file/{file_path}",
                             data=json_data,
                             headers=headers,
+                            auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+                            verify=Config.PROD)
+    return response.json()
+
+
+def delete_file(file_path):
+    response = requests.delete(f"{generic_api_endpoint}/file/{file_path}",
                             auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
                             verify=Config.PROD)
     return response.json()
