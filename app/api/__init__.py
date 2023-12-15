@@ -23,10 +23,11 @@ api.add_resource(RecordSpace,
 api.add_resource(File,
                  "/file",
                  "/file/<string:destination_path>")
-api.add_resource(ScanFiles, 
-                 "/scans/<string:record_name>",
-                 "/scans/id/<string:scan_id>"
-                )
+api.add_resource(ScanFiles,
+                 "/recordspace/<string:record_name>/scan",
+                 "/recordspace/<string:record_name>/scan/<string:scan_id>",
+
+                 )
 api.add_resource(Permissions,
                  "/permissions/<string:user_name>/<string:record_name>/<string:permission_type>",
                  "/permissions/<string:user_name>/<string:record_name>"

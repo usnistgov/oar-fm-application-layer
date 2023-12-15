@@ -130,6 +130,13 @@ def post_file(file, directory_path, filename=None):
         return {'status': response.status_code, 'content': response.content}
 
 
+def get_file(file_path):
+    response = requests.get(f"{generic_api_endpoint}/file/{file_path}",
+                            auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+                            verify=Config.PROD)
+    return response.json()
+
+
 def put_file(json_data, file_path):
     headers = {
         'Content-Type': 'application/json',

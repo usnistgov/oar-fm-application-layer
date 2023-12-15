@@ -3,6 +3,10 @@ helpers methods
 """
 import hashlib
 import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
+
+from pathlib import Path
+from app.utils import files
 
 
 def get_permissions_string(permission_number):
@@ -72,7 +76,7 @@ def extract_permissions(response):
     return permissions
 
 
-def parse_nextcloud_scan_xml(scan_result):
+def parse_nextcloud_scan_xml(user_dir, scan_result):
     # namespaces
     ns = {
         'd': 'DAV:',
@@ -105,7 +109,63 @@ def parse_nextcloud_scan_xml(scan_result):
 
         files.append(file_info)
 
+    # remove the dict associated to the user dir
+    ud_parts = user_dir.parts
+    for file in files:
+        file_path = Path(file['path'])
+        fp_parts = file_path.parts
+        if fp_parts[-len(ud_parts):] == ud_parts:
+            filtered_files = [f for f in files if f.get('path') != file_path]
+            return filtered_files
+
     return files
+
+
+def determine_resource_type(resource: dict) -> str:
+    """
+    Determines whether the resource is a folder or a file based on its path.
+    Assumes that folder paths end with a slash and file paths do not.
+    """
+    path = resource['path']
+    if path.endswith('/'):
+        return 'folder'
+    else:
+        return 'file'
+
+
+def find_last_modified(nextcloud_resource):
+    """
+    Find the date a file has last been modified in a user record space
+    based on its path
+    """
+    if isinstance(nextcloud_resource, list):
+        # Response is from get_directory
+        xml_str = ''.join(nextcloud_resource)
+    elif isinstance(nextcloud_resource, dict) and 'metadata' in nextcloud_resource:
+        # Response is from get_file
+        xml_str = nextcloud_resource['metadata']
+    else:
+        raise ValueError("Invalid nextcloud resource format")
+
+    nextcloud_resource = ''.join(nextcloud_resource)
+
+    # Parse the XML
+    root = ET.fromstring(xml_str)
+
+    # Find the getLastModified element
+    namespaces = {'d': 'DAV:'}
+    last_modified_element = root.find('.//d:getlastmodified', namespaces)
+
+    if last_modified_element is None:
+        raise ValueError("Last modified date not found in the nextcloud resource")
+
+    last_modified_value = last_modified_element.text
+
+    # Convert to ISO format
+    datetime_obj = parsedate_to_datetime(last_modified_value)
+    iso_formatted_time = datetime_obj.isoformat()
+
+    return iso_formatted_time
 
 
 def calculate_checksum(file_path: str, algorithm: str = "sha256") -> str:
