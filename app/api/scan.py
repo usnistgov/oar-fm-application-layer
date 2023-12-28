@@ -1,27 +1,28 @@
 """
 /scans endpoint manages record space files scanning operations
 """
-import uuid
-import json
-import tempfile
 import asyncio
-import threading
 import datetime
-import time
-import re
+import json
+import logging
 import os
+import re
+import tempfile
+import threading
+import time
+import uuid
+from abc import ABC, abstractmethod
+from collections.abc import Mapping
 
-import helpers
 from flask import current_app, copy_current_request_context
 from flask_jwt_extended import jwt_required
 from flask_restful import Resource
-from config import Config
-from abc import ABC, abstractmethod
-from pathlib import Path
-from collections.abc import Mapping
 
-
+import helpers
 from app.utils import files
+from config import Config
+
+logging.basicConfig(level=logging.INFO)
 
 # Global dictionary to keep track of scanning job statuses
 scans_states = {}
@@ -105,14 +106,14 @@ class UserSpaceScanner(ABC):
         raise NotImplementedError()
 
     @property
-    def user_dir(self) -> Path:
+    def user_dir(self) -> str:
         """
         the directory where the end-user has uploaded data.
         """
         raise NotImplementedError()
 
     @property
-    def system_dir(self) -> Path:
+    def system_dir(self) -> str:
         """
         the directory where this scanner can read and write files that are not visible
         to the end-user.
@@ -172,14 +173,14 @@ class UserSpaceScannerBase(UserSpaceScanner, ABC):
     base class for full implementations.
     """
 
-    def __init__(self, space_id: str, user_dir: Path, sys_dir: Path):
+    def __init__(self, space_id: str, user_dir: str, sys_dir: str):
         """
         initialize the scanner.
 
         :param str  space_id:  the identifier for the user space that should be scanned
-        :param Path user_dir:  the full path on a local filesystem to the directory where
+        :param str user_dir:  the full path on a local filesystem to the directory where
                                the end-user has uploaded files.
-        :param Path  sys_dir:  the full path on a local filesystem to a directory where
+        :param str  sys_dir:  the full path on a local filesystem to a directory where
                                the scanner can read and write files that are not visible
                                to the end user.
         """
@@ -206,10 +207,11 @@ class FileManagerDirectoryScanner(UserSpaceScannerBase):
     for the file manager scanning operations.
     """
 
-    def __init__(self, space_id: str, user_dir: Path, sys_dir: Path):
+    def __init__(self, space_id: str, user_dir: str, sys_dir: str):
         super().__init__(space_id, user_dir, sys_dir)
 
     def fast_scan(self, content_md: Mapping) -> Mapping:
+        logging.info("Starting fast scan")
         scan_id = content_md['scan_id']
         fm_system_path = content_md['fm_system_path']
 
@@ -223,11 +225,23 @@ class FileManagerDirectoryScanner(UserSpaceScannerBase):
             # Go back to the beginning of the file
             temp_file.seek(0)
             files.post_file(temp_file.name, str(fm_system_path), filename)
+
+        except KeyError as e:
+            logging.exception(f"Key error: {e}")
+            raise KeyError(f"Key not found: {e}")
+        except json.JSONDecodeError as e:
+            logging.exception(f"JSON encoding error: {e}")
+            raise ValueError("Invalid JSON format")
+        except Exception as e:
+            logging.exception("An unexpected error occurred")
+            raise RuntimeError("An unexpected error occurred: " + str(e))
+
         finally:
             # Close and delete the file
             temp_file.close()
             os.unlink(temp_file.name)
 
+        logging.info("Fast scan completed successfully")
         return content_md
 
     async def slow_scan(self, content_md: Mapping) -> Mapping:
@@ -242,29 +256,79 @@ class FileManagerDirectoryScanner(UserSpaceScannerBase):
         Returns:
             Mapping:  The updated metadata with checksums added or updated for each file.
         """
-        current_time = datetime.datetime.now()
-        scan_id = content_md['scan_id']
-        fm_system_path = content_md['fm_system_path']
+        logging.info("Starting slow scan")
+        try:
+            current_time = datetime.datetime.now()
+            scan_id = content_md['scan_id']
+            fm_system_path = content_md['fm_system_path']
 
-        for resource in content_md['contents']:
-            if resource['resource_type'] == 'file':
-                last_modified = datetime.datetime.fromisoformat(resource['last_modified']).replace(tzinfo=None)
-                last_checksum_date = datetime.datetime.fromisoformat(
-                    resource.get('last_checksum_date', '1970-01-01T00:00:00')).replace(tzinfo=None)
+            last_scan = self.find_most_recent_scan(scan_id)
 
-                if last_modified > last_checksum_date:
-                    file_path = resource['path']
-                    checksum = helpers.calculate_checksum(file_path)
+            for resource in content_md['contents']:
+                checksum = None
+                if resource['resource_type'] == 'file':
+                    last_modified = datetime.datetime.fromisoformat(resource['last_modified']).replace(tzinfo=None)
+                    file_id = resource['fileid']
+
+                    last_checksum_date = datetime.datetime.fromisoformat('1970-01-01T00:00:00').replace(
+                        tzinfo=None).isoformat()
+                    if last_scan is not None:
+                        last_scan_content_md = next(
+                            (content_md for content_md in last_scan['contents'] if content_md['fileid'] == file_id),
+                            None)
+                        if last_scan_content_md is not None and 'last_checksum_date' in last_scan_content_md:
+                            last_checksum_date = datetime.datetime.fromisoformat(
+                                last_scan_content_md['last_checksum_date']).replace(tzinfo=None)
+                            if last_modified < last_checksum_date:
+                                checksum = last_scan_content_md['checksum']
+                                last_checksum_date = last_checksum_date.isoformat()
+
+                    if checksum is None:
+                        file_path = resource['path']
+                        checksum = helpers.calculate_checksum(file_path)
+                        last_checksum_date = current_time.isoformat()
+
+                    # Update resource
                     resource['checksum'] = checksum
-                    resource['last_checksum_date'] = current_time.isoformat()
+                    resource['last_checksum_date'] = last_checksum_date
 
                     # Update the report.json file after each resource has been updated
                     update_json_data = json.dumps(content_md, indent=4)
                     filename = f"report-{scan_id}.json"
                     filepath = os.path.join(fm_system_path, filename)
-                    files.put_file(update_json_data, filepath)
+                    disk_filepath = os.path.join(self.system_dir, filename)
+                    files.put_file(update_json_data, filepath, disk_filepath)
 
-        return content_md
+            logging.info("Slow scan completed successfully")
+            return content_md
+
+        except Exception as e:
+            logging.exception(f"An unexpected error occurred during the slow scan: {e}")
+            raise
+
+    def find_most_recent_scan(self, scan_id):
+        most_recent_file = None
+        most_recent_time = 0
+
+        for filename in os.listdir(self.system_dir):
+            file_path = os.path.join(self.system_dir, filename)
+            if not os.path.isfile(file_path):
+                continue
+            modification_time = os.path.getmtime(file_path)
+            # Exclude current scan file from the search
+            if scan_id not in os.path.basename(filename):
+                if modification_time > most_recent_time:
+                    most_recent_file = file_path
+                    most_recent_time = modification_time
+
+        if most_recent_file is None:
+            return None
+
+        # Read the most recent JSON file and convert it to a Python dictionary
+        with open(most_recent_file, 'r') as file:
+            data = json.load(file)
+
+        return data
 
 
 class ScanFiles(Resource):
@@ -283,12 +347,15 @@ class ScanFiles(Resource):
             tuple: Success response with status code 200, or error response with status code 500.
         """
         try:
+            logging.info(f"Starting file scanning process for record: {record_name}")
+
             # Instantiate dirs
             space_id = record_name
-            fm_system_path = Path(space_id) / f"{space_id}-sys"
-            fm_space_path = Path(space_id) / f"{space_id}"
+            fm_system_path = os.path.join(space_id, f"{space_id}-sys")
+            fm_space_path = os.path.join(space_id, f"{space_id}")
             root_dir_from_disk = Config.NEXTCLOUD_ROOT_DIR_PATH
             user_dir = os.path.join(root_dir_from_disk, fm_space_path)
+            sys_dir = os.path.join(root_dir_from_disk, fm_system_path)
 
             # Create task for this scanning task
             scan_id = str(uuid.uuid4())
@@ -335,13 +402,10 @@ class ScanFiles(Resource):
             }
 
             # Instantiate Scanning Class
-            scanner = FileManagerDirectoryScanner(space_id, fm_space_path, fm_system_path)
+            scanner = FileManagerDirectoryScanner(space_id, user_dir, sys_dir)
 
             # Run fast scanning and update metadata
             content_md = scanner.fast_scan(content_md)
-
-            #TODO
-            # Update the scanning state
 
             # Run the slowScan asynchronously using a thread
             @copy_current_request_context
@@ -359,59 +423,103 @@ class ScanFiles(Resource):
                 'scan_id': scan_id
             }
 
+            logging.info(f"Scanning started successfully for record: {record_name}")
             return success_response, 200
 
-        except IOError as e:
-            return {'error': 'I/O Error', 'message': str(e)}, 500
+        except FileNotFoundError:
+            logging.error(f"File not found for record: {record_name}")
+            return {'error': 'Not Found', 'message': 'Requested record not found'}, 404
+
+        except ValueError as e:
+            logging.exception(f"Value error: {str(e)}")
+            return {'error': 'Bad Request', 'message': str(e)}, 400
+
         except Exception as e:
+            logging.exception(f"Unexpected error occurred for record: {record_name}")
             return {'error': 'Unexpected Error', 'message': str(e)}, 500
 
     @jwt_required()
-    def get(self, scan_id):
+    def get(self, record_name, scan_id):
         """
         Retrieves the current state and details of a scanning task by its ID.
 
         Args:
+            record_name (str): Unique identifier of the record.
             scan_id (str): Unique identifier of the scanning task.
 
         Returns:
-            tuple: Scanning task status and content with status code 200, or error message with status code 404.
+            tuple: Content metadata object and status code 200, or error message with status code 404.
         """
         try:
-            scan = scans_states[scan_id]
+            content = None
 
-            if scan is not None:
-                success_response = {
-                    'success': 'GET',
-                    'message': scan,
-                }
-                return success_response, 200
-            return {'error': 'Key Error!', 'message': f"Scanning '{scan_id}' Not Found"}, 404
+            # Instantiate dirs
+            space_id = record_name
+            fm_system_path = os.path.join(space_id, f"{space_id}-sys")
+            root_dir_from_disk = Config.NEXTCLOUD_ROOT_DIR_PATH
+            full_sys_dir = os.path.join(root_dir_from_disk, fm_system_path)
+
+            # Retrieve nextcloud metadata
+            nextcloud_md = helpers.parse_nextcloud_scan_xml(fm_system_path, files.put_scandir(fm_system_path))
+            for file_md in nextcloud_md:
+                if scan_id in file_md['path']:
+                    file_path = helpers.get_correct_path(
+                        os.path.join(full_sys_dir, re.split(r'/|\\', file_md['path'])[-1]))
+                    with open(file_path, 'r') as file:
+                        content = json.load(file)
+                        logging.info(f"Scan {scan_id} found and returned successfully")
+                        return {'success': 'GET', 'message': content}, 200
+
+            if content is None:
+                logging.error(f"Scan {scan_id} not found")
+                return {'error': 'Scan Not Found', 'message': f'Scan {scan_id} not found'}, 404
+
+        except FileNotFoundError as e:
+            logging.exception(f"File not found: {e}")
+            return {'error': 'File Not Found', 'message': str(e)}, 404
         except Exception as e:
+            logging.exception(f"Unexpected Error: {e}")
             return {'error': 'Unexpected Error', 'message': str(e)}, 500
 
     @jwt_required()
-    def delete(self, scan_id):
+    def delete(self, record_name, scan_id):
         """
-        Deletes a scanning task report from the global dict and the file manager using its unique ID.
+        Deletes a scanning task report from the file manager using its unique ID.
 
         Args:
+            record_name (str): Unique identifier of the record.
             scan_id (str): Unique identifier of the scanning task.
 
         Returns:
             tuple: Success response with status code 200, or error response with status code 500.
         """
         try:
-            file_path = scans_states[scan_id]['report_location']
-            files.delete_file(file_path)
-            del scans_states[scan_id]
+            # Instantiate dirs
+            space_id = record_name
+            fm_system_path = os.path.join(space_id, f"{space_id}-sys")
+            file_path = os.path.join(fm_system_path, f"report-{scan_id}.json")
 
+            # Delete file
+            logging.info(f"Attempting to delete file: {file_path}")
+            response = files.delete_file(file_path)
+
+            if len(response) > 0:
+                exception_message = helpers.extract_exception_message(response)
+
+                if exception_message is not None:
+                    error_type = exception_message.get('error', '')
+                    logging.error(f"Error in file deletion: {error_type} - {exception_message.get('message')}")
+                    if 'NotFound' in error_type:
+                        return {'error': 'File Not Found', 'message': exception_message.get('message')}, 404
+                    else:
+                        return {'error': 'Server Error', 'message': exception_message.get('message')}, 500
             success_response = {
                 'success': 'DELETE',
                 'message': f"Scanning '{scan_id}' deleted successfully!",
             }
+            logging.info(f"File deleted successfully: {file_path}")
             return success_response, 200
-        except KeyError:
-            return {'error': 'Key Error!', 'message': f"Scanning '{scan_id}' Not Found"}, 404
+
         except Exception as e:
+            logging.exception(f"Unexpected error during deletion: {str(e)}")
             return {'error': 'Unexpected Error', 'message': str(e)}, 500

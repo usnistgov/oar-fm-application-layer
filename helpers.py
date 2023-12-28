@@ -2,11 +2,11 @@
 helpers methods
 """
 import hashlib
+import os
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 
-from pathlib import Path
-from app.utils import files
+from urllib.parse import unquote
 
 
 def get_permissions_string(permission_number):
@@ -110,15 +110,15 @@ def parse_nextcloud_scan_xml(user_dir, scan_result):
         files.append(file_info)
 
     # remove the dict associated to the user dir
-    ud_parts = user_dir.parts
+    filtered_files = []
+    ud_parts = user_dir.split(os.path.sep)
     for file in files:
-        file_path = Path(file['path'])
-        fp_parts = file_path.parts
-        if fp_parts[-len(ud_parts):] == ud_parts:
-            filtered_files = [f for f in files if f.get('path') != file_path]
-            return filtered_files
+        file_path = os.path.normpath(file['path'])
+        fp_parts = file_path.split(os.path.sep)
+        if fp_parts[-len(ud_parts):] != ud_parts:
+            filtered_files.append(file)
 
-    return files
+    return filtered_files
 
 
 def determine_resource_type(resource: dict) -> str:
@@ -146,8 +146,6 @@ def find_last_modified(nextcloud_resource):
         xml_str = nextcloud_resource['metadata']
     else:
         raise ValueError("Invalid nextcloud resource format")
-
-    nextcloud_resource = ''.join(nextcloud_resource)
 
     # Parse the XML
     root = ET.fromstring(xml_str)
@@ -181,13 +179,57 @@ def calculate_checksum(file_path: str, algorithm: str = "sha256") -> str:
     Raises:
         ValueError: If an unsupported algorithm is provided.
     """
+    correct_path = get_correct_path(file_path)
     if algorithm == "sha256":
         hasher = hashlib.sha256()
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
-    with open(file_path, 'rb') as file:
+    with open(correct_path, 'rb') as file:
         for chunk in iter(lambda: file.read(4096), b""):
             hasher.update(chunk)
 
     return hasher.hexdigest()
+
+
+def get_correct_path(path):
+    decoded_path = unquote(path)
+    if os.path.exists(decoded_path):
+        return decoded_path
+    else:
+        return path
+
+
+def extract_exception_message(xml_list):
+    # Combine the list of strings into a single XML string
+    xml_data = ''.join(xml_list)
+
+    # Parse the XML
+    root = ET.fromstring(xml_data)
+
+    # Extract the exception message
+    namespace = {'d': 'DAV:', 's': 'http://sabredav.org/ns'}
+    exception = root.find('.//s:exception', namespace)
+    message = root.find('.//s:message', namespace)
+
+    if exception is not None and message is not None:
+        return {'error': exception.text, 'message': message.text}
+
+    return None
+
+
+def extract_status_code(xml_list):
+    # Join the list into a single string
+    xml_data = ''.join(xml_list)
+
+    # Parse the XML data
+    root = ET.fromstring(xml_data)
+
+    # Find the status code element and get its text
+    status_code_element = root.find('.//statuscode')
+    if status_code_element is not None:
+        status_code = int(status_code_element.text)
+    else:
+        status_code = None
+
+    return status_code

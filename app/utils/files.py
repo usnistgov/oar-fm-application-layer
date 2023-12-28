@@ -2,9 +2,10 @@
 Generic layer client for /files endpoints
 """
 
+import os
+
 import requests
 from flask import current_app
-import os
 from requests.auth import HTTPBasicAuth
 
 from config import Config
@@ -137,7 +138,12 @@ def get_file(file_path):
     return response.json()
 
 
-def put_file(json_data, file_path):
+def put_file(json_data, file_path, disk_file_path):
+    # Modify file in shared directory
+    with open(disk_file_path, 'w') as file:
+        file.write(json_data)
+
+    # Modify file in Nextcloud directory
     headers = {
         'Content-Type': 'application/json',
     }
@@ -151,8 +157,8 @@ def put_file(json_data, file_path):
 
 def delete_file(file_path):
     response = requests.delete(f"{generic_api_endpoint}/file/{file_path}",
-                            auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
-                            verify=Config.PROD)
+                               auth=HTTPBasicAuth(current_app.config['API_USER'], current_app.config['API_PWD']),
+                               verify=Config.PROD)
     return response.json()
 
 
