@@ -231,3 +231,11 @@ def extract_status_code(xml_list):
         status_code = None
 
     return status_code
+
+
+def calculate_size(contents):
+    total_size = 0
+    for item in contents:
+        if item['resource_type'] == 'file':
+            total_size += int(item['size'])
+    return str(total_size)

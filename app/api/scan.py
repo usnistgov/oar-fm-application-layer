@@ -423,6 +423,7 @@ class ScanFiles(Resource):
                 'fm_system_path': str(fm_system_path),
                 'contents': contents,
                 'last_modified': last_modified_date,
+                'size': helpers.calculate_size(contents),
                 'is_complete': True
             }
 
