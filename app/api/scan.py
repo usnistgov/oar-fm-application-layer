@@ -334,6 +334,46 @@ class FileManagerDirectoryScanner(UserSpaceScannerBase):
 class ScanFiles(Resource):
     """Resource to handle file scanning operations."""
 
+    def scan_directory_contents(self, fm_file_path, root_dir_from_disk):
+        """
+        Recursively scans directories and their contents.
+
+        Args:
+            fm_file_path (str): File manager file path relative to the root directory.
+            root_dir_from_disk (str): Root directory path from disk.
+
+        Returns:
+            list: List of metadata dictionaries for all files and directories.
+        """
+        contents = []
+        nextcloud_xml = files.put_scandir(fm_file_path)
+        nextcloud_md = helpers.parse_nextcloud_scan_xml(fm_file_path, nextcloud_xml)
+
+        for resource in nextcloud_md:
+            resource_path = re.split(Config.API_USER, resource['path'], flags=re.IGNORECASE)[-1].lstrip('/')
+            nextcloud_resource_info = files.get_file(resource_path)
+
+            resource_md = {
+                'fileid': resource['fileid'],
+                'path': os.path.join(root_dir_from_disk, resource_path),
+                'size': resource['size'],
+                'last_modified': helpers.find_last_modified(nextcloud_resource_info),
+                'resource_type': helpers.determine_resource_type(resource),
+                'scan_errors': []
+            }
+
+            if resource_md['resource_type'] == 'folder':
+                if resource_md not in contents:
+                    contents += [resource_md]
+                subdirectory_path = resource_path
+                resource_md = self.scan_directory_contents(subdirectory_path, root_dir_from_disk)
+            else:
+                resource_md = [resource_md]
+
+            contents += resource_md
+
+        return contents
+
     @jwt_required()
     def post(self, record_name):
         """
@@ -371,23 +411,8 @@ class ScanFiles(Resource):
             current_datetime = datetime.datetime.fromtimestamp(current_epoch_time)
             display_time = current_datetime.isoformat()
 
-            # Retrieve nextcloud metadata
-            nextcloud_md = helpers.parse_nextcloud_scan_xml(fm_space_path, files.put_scandir(fm_space_path))
-
-            # Instantiate content metadata
-            contents = []
-            for resource in nextcloud_md:
-                fm_file_path = re.split(Config.API_USER, resource['path'], flags=re.IGNORECASE)[-1].lstrip('/')
-                nextcloud_file_info = files.get_file(fm_file_path)
-                resource_md = {
-                    'fileid': resource['fileid'],
-                    'path': os.path.join(root_dir_from_disk, fm_file_path),
-                    'size': resource['size'],
-                    'last_modified': helpers.find_last_modified(nextcloud_file_info),
-                    'resource_type': helpers.determine_resource_type(resource),
-                    'scan_errors': []
-                }
-                contents.append(resource_md)
+            # Scan the initial directory and get content metadata
+            contents = self.scan_directory_contents(fm_space_path, root_dir_from_disk)
 
             content_md = {
                 'space_id': space_id,
@@ -460,7 +485,7 @@ class ScanFiles(Resource):
             full_sys_dir = os.path.join(root_dir_from_disk, fm_system_path)
 
             # Retrieve nextcloud metadata
-            nextcloud_md = helpers.parse_nextcloud_scan_xml(fm_system_path, files.put_scandir(fm_system_path))
+            nextcloud_md = helpers.parse_nextcloud_scan_xml(files.put_scandir(fm_system_path))
             for file_md in nextcloud_md:
                 if scan_id in file_md['path']:
                     file_path = helpers.get_correct_path(

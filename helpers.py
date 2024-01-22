@@ -111,11 +111,9 @@ def parse_nextcloud_scan_xml(user_dir, scan_result):
 
     # remove the dict associated to the user dir
     filtered_files = []
-    ud_parts = user_dir.split(os.path.sep)
     for file in files:
-        file_path = os.path.normpath(file['path'])
-        fp_parts = file_path.split(os.path.sep)
-        if fp_parts[-len(ud_parts):] != ud_parts:
+        file_path = file['path']
+        if not file_path.endswith((user_dir, user_dir + '/')):
             filtered_files.append(file)
 
     return filtered_files
