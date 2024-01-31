@@ -144,7 +144,7 @@ installdir=$BUILD_DIR/fm-application-layer
 set -x
 mkdir -p $installdir
 
-cp -r $PACKAGE_DIR/python/* $BUILD_DIR
+cp -r $PACKAGE_DIR/python/* $installdir
 
 # ENTER COMMANDS for creating the dependency file(s)
 #
