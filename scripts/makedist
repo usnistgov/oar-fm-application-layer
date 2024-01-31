@@ -51,7 +51,6 @@ execdir=`realpath $execdir`
 PACKAGE_DIR=`dirname $execdir`
 SOURCE_DIR=$PACKAGE_DIR/python
 DIST_DIR=$PACKAGE_DIR/dist
-BUILD_DIR=$SOURCE_DIR/dist
 VERSION=
 
 
@@ -113,14 +112,14 @@ while [ "$1" != "" ]; do
 done
 
 true ${DIST_DIR:=$PACKAGE_DIR/dist}
-BUILD_DIR=$SOURCE_DIR/dist
+BUILD_DIR=$PACKAGE_DIR/build
 mkdir -p $BUILD_DIR $DIST_DIR
 
 
 # set the current version.  This will inject the version into the code, if 
 # needed.
 #
-(cd $PACKAGE_DIR ./scripts/setversion.sh)
+(cd $PACKAGE_DIR && ./scripts/setversion.sh)
 
 # don't reset the version unnecessarily as it may have been done by makedist
 # 
@@ -145,7 +144,7 @@ installdir=$BUILD_DIR/fm-application-layer
 set -x
 mkdir -p $installdir
 
-cp -r $PACKAGE_DIR/python/* $BUILD_DIR/*
+cp -r $PACKAGE_DIR/python/* $BUILD_DIR
 
 # ENTER COMMANDS for creating the dependency file(s)
 #
