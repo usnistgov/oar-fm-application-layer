@@ -12,3 +12,4 @@ class Config:
     API_USER = os.environ.get("API_USER")
     API_PWD = os.environ.get("API_PWD")
     PROD = False
+    NEXTCLOUD_ROOT_DIR_PATH = os.environ.get("NEXTCLOUD_ROOT_DIR_PATH")

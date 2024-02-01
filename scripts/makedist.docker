@@ -20,7 +20,7 @@ execdir=`dirname $0`
 export CODEDIR=`(cd $execdir/.. > /dev/null 2>&1; pwd)`
 export DOCKERDIR=$CODEDIR/docker
 
-$DOCKERDIR/dockbuild.sh
+# $DOCKERDIR/dockbuild.sh
 # Run the main makedist in the dockerdir
 echo "Run makedist for fm-application-layer"
 exec $DOCKERDIR/makedist "$@"
