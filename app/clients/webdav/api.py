@@ -4,11 +4,13 @@ This module provides a client class, WebDAVClient, designed to perform WebDAV op
 from webdav3.client import Client as WebDavClient
 from webdav3.exceptions import WebDavException
 import logging
+import tempfile
+import os
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-class WebDAVClient:
+class WebDAVApi:
     def __init__(self, config):
         self.is_prod = config['is_prod']
         self.api_user = config['api_user']
@@ -26,20 +28,35 @@ class WebDAVClient:
     def handle_request(self, method, target, content=None):
         """ Generic request handler. """
         try:
-            path = f"{self.base_url}/remote.php/dav/files/{self.api_user}/{target.lstrip('/')}"
+            path = f"/remote.php/dav/files/{self.api_user}/{target.lstrip('/')}"
             if method == 'MKCOL':
                 self.client.mkdir(path)
+                logging.info(f"Directory created: {path}")
             elif method == 'PROPFIND':
                 return self.client.info(path)
             elif method == 'DELETE':
                 self.client.clean(path)
+                logging.info(f"File/Folder deleted: {path}")
             elif method == 'PUT':
                 if content is not None:
-                    self.client.upload_sync(remote_path=path, local_path=None, content=content)
+                    with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.tmp') as temp_file:
+                        temp_file.write(content)
+                        temp_file_path = temp_file.name
+                    self.client.upload_sync(remote_path=path, local_path=temp_file_path)
+                    logging.info(f"File uploaded/modified: {path}")
+                    if os.path.exists(temp_file_path):
+                        os.remove(temp_file_path)
                 else:
                     raise ValueError("Content must be provided to upload or modify a file!")
             elif method == 'GET':
-                return self.client.download_sync(remote_path=path, local_path=None)
+                temp_file = tempfile.NamedTemporaryFile(delete=False)
+                self.client.download_sync(remote_path=path, local_path=temp_file.name)
+                with open(temp_file.name, 'r', encoding='utf-8') as file:
+                    content = file.read()
+                    logging.info(f"File content retrieved: {content}")
+                    temp_file.close()
+                    os.remove(temp_file.name)
+                return content
             else:
                 raise ValueError(f"Unsupported method: {method}")
         except WebDavException as e:
