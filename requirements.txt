@@ -7,3 +7,5 @@ certifi==2022.12.7
 flask-testing==0.8.1
 pytest==7.4.0
 pytest-dotenv==0.5.2
+Werkzeug==2.2.2
+webdavclient3==3.14.6

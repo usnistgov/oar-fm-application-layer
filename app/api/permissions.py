@@ -1,176 +1,197 @@
 """
 /permissions endpoint manages user permissions to a record space
 """
+import logging
 import xml.etree.ElementTree as ET
 
 from flask_jwt_extended import jwt_required
 from flask_restful import Resource
 
-from app.utils import files
-from helpers import get_permissions_string, get_permissions_number, extract_failure_msgs, extract_permissions
+import helpers
+from app.clients.nextcloud.api import NextcloudApi
+from config import Config
+from helpers import get_permissions_number
+
+logging.basicConfig(level=logging.INFO)
 
 
 class Permissions(Resource):
 
     @staticmethod
     def _parse_xml_response(response):
-        # Join the list elements to form the XML string
-        xml_response = "".join(response)
-
-        # Parse XML response
-        root = ET.fromstring(xml_response)
-        return root
+        try:
+            xml_response = "".join(response)
+            root = ET.fromstring(xml_response)
+            return root
+        except ET.ParseError as e:
+            logging.exception(f"XML parsing error: {e}")
+            raise ValueError("Invalid XML format")
 
     @staticmethod
     def _get_users_permissions_from_xml(root):
-        shares = root.findall('.//element')
-
-        # Instantiate parsed dict
-        users_permissions = {}
-
-        # Iterate over shares
-        for share in shares:
-            user = share.find('share_with').text
-            permissions = share.find('permissions').text
-            users_permissions[user] = permissions
-
-        return users_permissions
+        try:
+            shares = root.findall('.//element')
+            users_permissions = {}
+            for share in shares:
+                user = share.find('share_with').text
+                permissions = share.find('permissions').text
+                users_permissions[user] = permissions
+            return users_permissions
+        except AttributeError as e:
+            logging.exception(f"Error parsing XML: {e}")
+            raise ValueError("Error in XML structure")
 
     @staticmethod
     def _check_response_message(root):
         response_message = root.find(".//message").text
         if response_message != 'OK':
-            raise Exception(response_message)
+            raise ValueError(response_message)
 
     @jwt_required()
     def post(self, user_name, record_name, permission_type):
         try:
+            nextcloud_client = NextcloudApi(Config)
             nextcloud_permission = str(get_permissions_number(permission_type))
             if nextcloud_permission == 'Invalid permissions':
-                message = nextcloud_permission
-                raise Exception(message)
+                logging.error(f"Invalid permission type: {permission_type}")
+                return {"error": "Bad Request", "message": "Invalid permission type"}, 400
 
-            dir_name = f"mds2-{record_name}/mds2-{record_name}"
+            dir_name = f"{record_name}/{record_name}"
+
+            # Create user if user_name does not exist
+            if not nextcloud_client.is_user(user_name):
+                user_creation_response = nextcloud_client.create_user(user_name)
+                if not user_creation_response:
+                    logging.error(f"Failed to create user '{user_name}'")
+                    return {"error": "Internal Server Error", "message": "Failed to create user"}, 500
+                else:
+                    logging.info(f"Successfully created user '{user_name}'")
 
             # Ensure user has no permissions on record
-            response = files.get_userpermissions(dir_name)
-            root = self._parse_xml_response(response)
-            self._check_response_message(root)
-            users_permissions = self._get_users_permissions_from_xml(root)
-            if user_name in users_permissions:
-                raw_permissions = int(users_permissions[user_name])
-                existing_permissions = get_permissions_string(raw_permissions)
-                message = f"User {user_name} already has permissions {existing_permissions} on record space {record_name}!"
-                raise Exception(message)
+            response = nextcloud_client.get_user_permissions(dir_name)
+            dir_users = {}
+            if ['ocs'] not in response:
+                logging.error(f"Record name '{record_name}' does not exist or missing information")
+                return {"error": "Not Found",
+                        "message": f"Record name '{record_name}' does not exist or is missing information"}, 404
 
-            response = files.post_userpermissions(user_name, nextcloud_permission, dir_name)
+            for data in response['ocs']['data']:
+                dir_users[data['share_with']] = helpers.get_permissions_string(data['permissions'])
+            if user_name in dir_users:
+                message = f"User {user_name} already has permissions {dir_users[user_name]} on record space {record_name}!"
+                logging.error(message)
+                return {"error": "Conflict", "message": message}, 409
 
-            failure_msgs = extract_failure_msgs(response)
-            if failure_msgs != '':
-                message = failure_msgs
-                raise Exception(message)
+            response = nextcloud_client.set_user_permissions(user_name, nextcloud_permission, dir_name)
+            if response['ocs']['meta']['statuscode'] != 200:
+                logging.error("Error setting user permissions")
+                return {"error": "Internal Server Error", "message": "Failed to set user permissions"}, 500
 
             success_response = {
                 'success': 'POST',
                 'message': f"Created User '{user_name}' permissions '{permission_type}'  on directory '{record_name}' successfully!"
             }
 
+            logging.info("Permissions successfully created")
             return success_response, 201
 
+        except ValueError as ve:
+            logging.exception(f"Value error: {str(ve)}")
+            return {"error": "Bad Request", "message": str(ve)}, 400
         except Exception as error:
-            error_response = {
-                'error': 'Bad Request',
-                'message': str(error)
-            }
-            return error_response, 400
+            logging.exception(f"Unexpected error: {str(error)}")
+        return {"error": "Internal Server Error", "message": "An unexpected error occurred"}, 500
 
     @jwt_required()
     def get(self, user_name, record_name):
         try:
-            dir_name = f"mds2-{record_name}/mds2-{record_name}"
-            response = files.get_userpermissions(dir_name)
+            nextcloud_client = NextcloudApi(Config)
+            dir_name = f"{record_name}/{record_name}"
+            response = nextcloud_client.get_user_permissions(dir_name)
 
-            root = self._parse_xml_response(response)
-            self._check_response_message(root)
+            dir_users = {}
+            if ['ocs'] not in response:
+                logging.error(f"Record name '{record_name}' does not exist or missing information")
+                return {"error": "Not Found",
+                        "message": f"Record name '{record_name}' does not exist or is missing information"}, 404
 
-            users_permissions = self._get_users_permissions_from_xml(root)
-
-            # Extract user_name permissions
-            if user_name in users_permissions:
-                raw_permissions = int(users_permissions[user_name])
-                user_permissions = get_permissions_string(raw_permissions)
-            else:
-                message = f"User {user_name} does not exist or does not have any permissions on record space {record_name}!"
-                raise Exception(message)
+            for data in response['ocs']['data']:
+                dir_users[data['share_with']] = helpers.get_permissions_string(data['permissions'])
+            if user_name not in dir_users:
+                logging.error(f"User {user_name} does not exist or does not have permissions")
+                return {"error": "Not Found",
+                        "message": f"User {user_name} does not exist or does not have any permissions on record space {record_name}"}, 404
 
             success_response = {
                 'success': 'GET',
-                'message': user_permissions
+                'message': dir_users[user_name]
             }
 
+            logging.info(f"Permissions successfully retrieved: {dir_users[user_name]}")
             return success_response, 200
-
+        except ValueError as ve:
+            logging.exception(f"Value error: {ve}")
+            return {"error": "Bad Request", "message": str(ve)}, 400
         except Exception as error:
-            error_response = {
-                'error': 'Bad Request',
-                'message': str(error)
-            }
-            return error_response, 400
+            logging.exception("An unexpected error occurred in GET")
+            return {"error": "Internal Server Error", "message": str(error)}, 500
 
     @jwt_required()
     def put(self, user_name, record_name, permission_type):
         try:
+            nextcloud_client = NextcloudApi(Config)
             nextcloud_permission = str(get_permissions_number(permission_type))
             if nextcloud_permission == 'Invalid permissions':
-                message = nextcloud_permission
-                raise Exception(message)
+                logging.error("Invalid permission type provided for PUT")
+                return {"error": "Bad Request", "message": nextcloud_permission}, 400
 
-            dir_name = f"mds2-{record_name}/mds2-{record_name}"
-            response = files.put_userpermissions(user_name, nextcloud_permission, dir_name)
+            if not nextcloud_client.is_user(user_name):
+                logging.error(f"User '{user_name}' does not exist")
+                return {"error": "User Not Found",
+                        "message": f"Failed to retrieve user. User '{user_name}' does not exist"}, 404
 
-            user_permissions = get_permissions_string(extract_permissions(response))
-            if user_permissions != permission_type:
-                # Store failure messages
-                failure_msgs = extract_failure_msgs(response)
-
-                if failure_msgs != '':
-                    message = failure_msgs
-                    raise Exception(message)
+            dir_name = f"{record_name}/{record_name}"
+            nextcloud_client.delete_user_permissions(user_name, dir_name)
+            response = nextcloud_client.set_user_permissions(user_name, nextcloud_permission, dir_name)
+            if response['ocs']['meta']['statuscode'] != 200:
+                logging.error("Error setting user permissions")
+                return {"error": "Internal Server Error", "message": "Failed to set user permissions"}, 500
 
             success_response = {
                 'success': 'PUT',
                 'message': f"Updated User '{user_name}' permissions on directory '{record_name}' to '{permission_type}' successfully!"
             }
 
+            logging.info(
+                f"Updated User '{user_name}' permissions on directory '{record_name}' to '{permission_type}' successfully!")
             return success_response, 200
-
+        except ValueError as ve:
+            logging.exception(f"Value error in PUT: {ve}")
+            return {"error": "Bad Request", "message": str(ve)}, 400
         except Exception as error:
-            error_response = {
-                'error': 'Bad Request',
-                'message': str(error)
-            }
-            return error_response, 400
+            logging.exception("An unexpected error occurred in PUT")
+            return {"error": "Internal Server Error", "message": str(error)}, 500
 
     @jwt_required()
     def delete(self, user_name, record_name):
         try:
-            dir_name = f"mds2-{record_name}/mds2-{record_name}"
-            users_permissions = files.delete_userpermissions(user_name, dir_name)
+            nextcloud_client = NextcloudApi(Config)
+            dir_name = f"{record_name}/{record_name}"
+            response = nextcloud_client.delete_user_permissions(user_name, dir_name)
 
-            if 'error' in users_permissions:
-                message = 'User does not exist or does not have permissions or the file/folder does not exist'
-                raise Exception(message)
+            if 'error' in response:
+                logging.error("User does not exist or does not have permissions or the file/folder does not exist")
+                return {"error": "Not Found",
+                        "message": 'User does not exist or does not have permissions or the file/folder does not exist'}, 404
 
             success_response = {
                 'success': 'DELETE',
                 'message': f"Deleted User '{user_name}' permissions on directory '{record_name}' successfully!"
             }
 
+            logging.info(f"Deleted User '{user_name}' permissions on directory '{record_name}' successfully!")
             return success_response, 200
 
         except Exception as error:
-            error_response = {
-                'error': 'Bad Request',
-                'message': str(error)
-            }
-            return error_response, 400
+            logging.exception("An unexpected error occurred in DELETE")
+            return {"error": "Internal Server Error", "message": str(error)}, 500
