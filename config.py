@@ -13,5 +13,5 @@ class Config:
     API_PWD = os.environ.get("API_PWD")
     PROD = False
     NEXTCLOUD_ROOT_DIR_PATH = os.environ.get("NEXTCLOUD_ROOT_DIR_PATH")
-    WEBDAV_PROD_URL=os.environ.get("WEBDAV_PROD_URL")
-    WEBDAV_DEV_URL=os.environ.get("WEBDAV_DEV_URL")
+    WEBDAV_PROD_URL = os.environ.get("WEBDAV_PROD_URL")
+    WEBDAV_DEV_URL = os.environ.get("WEBDAV_DEV_URL")
