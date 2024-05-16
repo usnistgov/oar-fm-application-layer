@@ -1,0 +1,10 @@
+Flask==2.2.3
+Flask-RESTful==0.3.9
+requests==2.28.2
+Flask-JWT-Extended==4.4.4
+python-dotenv==0.21.1
+certifi==2022.12.7
+flask-testing==0.8.1
+pytest==7.4.0
+pytest-dotenv==0.5.2
+Werkzeug==2.2.2
