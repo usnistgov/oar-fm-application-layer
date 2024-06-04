@@ -43,39 +43,6 @@ def get_permissions_number(permission_string):
         return "Invalid permissions"
 
 
-def extract_failure_msgs(response):
-    failure_msgs = ''
-
-    if isinstance(response, list):
-        elements = ''.join(response).split('<message>')[1:]
-    else:
-        elements = response.content.decode().split('<message>')[1:]
-
-    for element in elements:
-        element = element.split('<')[0].replace("\\", "")
-        if element.lower() != 'ok' and element not in failure_msgs:
-            if failure_msgs != '':
-                failure_msgs += ', \n'
-            failure_msgs += element
-
-    return failure_msgs
-
-
-def extract_permissions(response):
-    if isinstance(response, list):
-        element = ''.join(response)
-    else:
-        element = response.content.decode()
-
-    if '<permissions>' not in element:
-        return 'No permissions'
-
-    element = element.split('<permissions>')[1:][0]
-    permissions = int(element.split('<')[0].replace("\\", ""))
-
-    return permissions
-
-
 def parse_nextcloud_scan_xml(user_dir, scan_result):
     # namespaces
     ns = {
@@ -117,51 +84,6 @@ def parse_nextcloud_scan_xml(user_dir, scan_result):
             filtered_files.append(file)
 
     return filtered_files
-
-
-def determine_resource_type(resource: dict) -> str:
-    """
-    Determines whether the resource is a folder or a file based on its path.
-    Assumes that folder paths end with a slash and file paths do not.
-    """
-    path = resource['path']
-    if path.endswith('/'):
-        return 'folder'
-    else:
-        return 'file'
-
-
-def find_last_modified(nextcloud_resource):
-    """
-    Find the date a file has last been modified in a user record space
-    based on its path
-    """
-    if isinstance(nextcloud_resource, list):
-        # Response is from get_directory
-        xml_str = ''.join(nextcloud_resource)
-    elif isinstance(nextcloud_resource, dict) and 'metadata' in nextcloud_resource:
-        # Response is from get_file
-        xml_str = nextcloud_resource['metadata']
-    else:
-        raise ValueError("Invalid nextcloud resource format")
-
-    # Parse the XML
-    root = ET.fromstring(xml_str)
-
-    # Find the getLastModified element
-    namespaces = {'d': 'DAV:'}
-    last_modified_element = root.find('.//d:getlastmodified', namespaces)
-
-    if last_modified_element is None:
-        raise ValueError("Last modified date not found in the nextcloud resource")
-
-    last_modified_value = last_modified_element.text
-
-    # Convert to ISO format
-    datetime_obj = parsedate_to_datetime(last_modified_value)
-    iso_formatted_time = datetime_obj.isoformat()
-
-    return iso_formatted_time
 
 
 def calculate_checksum(file_path: str, algorithm: str = "sha256") -> str:
@@ -214,23 +136,6 @@ def extract_exception_message(xml_list):
         return {'error': exception.text, 'message': message.text}
 
     return None
-
-
-def extract_status_code(xml_list):
-    # Join the list into a single string
-    xml_data = ''.join(xml_list)
-
-    # Parse the XML data
-    root = ET.fromstring(xml_data)
-
-    # Find the status code element and get its text
-    status_code_element = root.find('.//statuscode')
-    if status_code_element is not None:
-        status_code = int(status_code_element.text)
-    else:
-        status_code = None
-
-    return status_code
 
 
 def calculate_size(contents):
