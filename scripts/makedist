@@ -157,8 +157,8 @@ else
 fi
 
 # #Is this needed?
-# $execdir/record_python_deps.py ${DISTNAMES[0]} $version \
-#                         > $DIST_DIR/${DISTNAMES[0]}-${vers4fn}_dep.json
+$execdir/record_python_deps.py ${DISTNAMES[0]} $version \
+                         > $DIST_DIR/${DISTNAMES[0]}-${vers4fn}_dep.json
 
 echo "bundle creation"
 # Bundle the distribution
