@@ -70,7 +70,7 @@ class Permissions(Resource):
             # Ensure user has no permissions on record
             response = nextcloud_client.get_user_permissions(dir_name)
             dir_users = {}
-            if ['ocs'] not in response:
+            if 'ocs' not in response:
                 logging.error(f"Record name '{record_name}' does not exist or missing information")
                 return {"error": "Not Found",
                         "message": f"Record name '{record_name}' does not exist or is missing information"}, 404
@@ -110,7 +110,7 @@ class Permissions(Resource):
             response = nextcloud_client.get_user_permissions(dir_name)
 
             dir_users = {}
-            if ['ocs'] not in response:
+            if 'ocs' not in response:
                 logging.error(f"Record name '{record_name}' does not exist or missing information")
                 return {"error": "Not Found",
                         "message": f"Record name '{record_name}' does not exist or is missing information"}, 404
@@ -133,8 +133,8 @@ class Permissions(Resource):
             logging.exception(f"Value error: {ve}")
             return {"error": "Bad Request", "message": str(ve)}, 400
         except Exception as error:
-            logging.exception("An unexpected error occurred in GET")
-            return {"error": "Internal Server Error", "message": str(error)}, 500
+            logging.exception("An unexpected error occurred: " + str(error))
+            return {"error": "Internal Server Error", "message": "An unexpected error occurred"}, 500
 
     @jwt_required()
     def put(self, user_name, record_name, permission_type):
@@ -169,8 +169,8 @@ class Permissions(Resource):
             logging.exception(f"Value error in PUT: {ve}")
             return {"error": "Bad Request", "message": str(ve)}, 400
         except Exception as error:
-            logging.exception("An unexpected error occurred in PUT")
-            return {"error": "Internal Server Error", "message": str(error)}, 500
+            logging.exception("An unexpected error occurred: " + str(error))
+            return {"error": "Internal Server Error", "message": "An unexpected error occurred"}, 500
 
     @jwt_required()
     def delete(self, user_name, record_name):
@@ -193,5 +193,5 @@ class Permissions(Resource):
             return success_response, 200
 
         except Exception as error:
-            logging.exception("An unexpected error occurred in DELETE")
-            return {"error": "Internal Server Error", "message": str(error)}, 500
+            logging.exception("An unexpected error occurred: " + str(error))
+            return {"error": "Internal Server Error", "message": "An unexpected error occurred"}, 500
