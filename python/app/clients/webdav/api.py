@@ -248,7 +248,7 @@ class WebDAVApi:
             with open(file, 'r') as file_to_upload:
                 content = file_to_upload.read()
         else:
-            content = file.read().decode('utf-8')
+            content = file.read()
 
         path = os.path.join(destination_path, filename)
         return self.handle_request('PUT', path, content)
