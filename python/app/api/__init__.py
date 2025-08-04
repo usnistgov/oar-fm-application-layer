@@ -22,7 +22,7 @@ api.add_resource(RecordSpace,
                  "/record-space/<string:record_name>",
                  )
 api.add_resource(File,
-                 "/file/<string:destination_path>",
+                 "/file/<path:destination_path>",
                  )
 api.add_resource(ScanFiles,
                  "/record-space/<string:record_name>/scan/<string:scan_id>",
