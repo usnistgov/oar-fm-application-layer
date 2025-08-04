@@ -62,17 +62,17 @@ class File(Resource):
         """Deletes a file at a specified path."""
         try:
             webdav_client = WebDAVApi(Config)
-            if not webdav_client.is_file(path):
-                logging.error(f"File '{path}' not found")
+            if not webdav_client.is_file(destination_path):
+                logging.error(f"File '{destination_path}' not found")
                 return {'error': 'File Not Found', 'message': 'File does not exist'}, 404
 
-            delete_response = webdav_client.delete_file(path)
+            delete_response = webdav_client.delete_file(destination_path)
 
             if delete_response['status'] not in [200, 204]:
-                logging.error(f"Failed to delete file '{path}'")
+                logging.error(f"Failed to delete file '{destination_path}'")
                 return {'error': 'Internal Server Error', 'message': 'Failed to delete file'}, 500
 
-            logging.info(f"Deleted file '{path}'")
+            logging.info(f"Deleted file '{destination_path}'")
             return {'success': 'DELETE', 'message': f'File successfully deleted!'}, 200
 
         except Exception as error:
