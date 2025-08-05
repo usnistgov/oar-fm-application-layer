@@ -73,39 +73,6 @@ class File(Resource):
             return {"error": "Internal Server Error", "message": "An unexpected error occurred"}, 500
 
     @jwt_required()
-    def put(self, destination_path=''):
-        """Modifies an existing file at a specified directory path."""
-        try:
-            webdav_client = WebDAVApi(Config)
-            if 'file' not in request.files:
-                logging.error("No file part in the request")
-                return {'error': 'Bad Request', 'message': 'No file part in the request'}, 400
-
-            file = request.files['file']
-            filename = file.filename or getattr(file, 'filename', None)
-            if not filename:
-                return {'error': 'Bad Request', 'message': 'No filename provided'}, 400
-
-            path = os.path.join(destination_path, filename)
-            # Check if the file exists
-            if not webdav_client.is_file(path):
-                logging.error("File doesn't exist")
-                return {'error': 'Not Found', 'message': f'File {filename} does not exist'}, 404
-
-            content = file.stream.read().decode('utf-8')
-            modify_response = webdav_client.modify_file_content(path, content)
-            if modify_response['status'] not in [200, 201, 204]:
-                logging.error(f"Failed to modify file '{filename}'")
-                return {'error': 'Internal Server Error', 'message': 'Failed to modify file'}, 500
-
-            logging.info(f"file '{filename}' modified successfully")
-            return {'success': 'PUT',
-                    'message': f'Modified file {filename} in {destination_path} successfully'}, 200
-        except Exception as error:
-            logging.exception("An unexpected error occurred: " + str(error))
-            return {"error": "Internal Server Error", "message": "An unexpected error occurred"}, 500
-
-    @jwt_required()
     def delete(self, destination_path):
         """Deletes a file at a specified path."""
         try:
