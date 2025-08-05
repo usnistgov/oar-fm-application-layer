@@ -84,7 +84,7 @@ class File(Resource):
 
             elif delete_response['status'] == 404:
                 logging.error("File doesn't exist")
-                return {'error': 'Not Found', 'message': f'File {filename} does not exist'}, 404
+                return {'error': 'Not Found', 'message': f'File {destination_path} does not exist'}, 404
             else:
                 logging.error(f"Failed to delete file '{destination_path}'")
                 return {'error': 'Internal Server Error', 'message': 'Failed to delete file'}, 500
