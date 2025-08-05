@@ -239,7 +239,7 @@ class WebDAVApi:
             if isinstance(file, str):
                 filename = os.path.basename(file)
             else:
-                filename = getattr(file, 'name', None)
+                filename = getattr(file, 'filename', None)
                 if not filename:
                     logging.error("No filename provided")
                     return {'status': 400, 'message': "File name hasn't been provided"}
@@ -278,8 +278,16 @@ class WebDAVApi:
 
     def is_file(self, path):
         """Check if arg path leads to a file, returns bool accordingly"""
-        result = self.handle_request('CHECK', path)
-        if result is False:
+        response = self.handle_request('CHECK', path)
+        if not response:
             return False
         else:
-            return not result  # if result is True (i.e., isdir), then it's not a file
+            if isinstance(response, dict) and 'info' in response:
+                info = response['info']
+                if not info:
+                    return False
+                # info is a list of file/folder responses; first one is the path itself
+                # If isdir == False, it's a file
+                return isdir is False
+            # Fallback to previous logic
+            return False
