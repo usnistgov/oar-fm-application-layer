@@ -3,6 +3,7 @@
 """
 import logging
 import re
+import os
 
 from flask_jwt_extended import jwt_required
 from flask_restful import Resource
@@ -58,6 +59,18 @@ class RecordSpace(Resource):
                 if permissions_response['ocs']['meta']['statuscode'] != 200:
                     logging.error("Error setting user permissions")
                     return {"error": "Internal Server Error", "message": "Failed to set user permissions"}, 500
+
+            # Upload helper file to user dir
+            helper_path = os.path.join("python", "data", "instructions.txt")
+
+            if not os.path.isfile(helper_path):
+                logging.error("instructions.txt not found at %s", helper_path)
+                return {"error": "Internal Server Error", "message": "instructions.txt not found on server"}, 500
+
+            upload_response = webdav_client.upload_file(user_dir, helper_path)
+            if upload_response.get('status') not in [200, 201, 204]:
+                logging.error("Failed to upload instructions.txt (status %s)", upload_response.get('status'))
+                return {"error": "Internal Server Error", "message": "Failed to upload instructions.txt"}, 500
 
             success_response = {
                 'success': 'POST',
