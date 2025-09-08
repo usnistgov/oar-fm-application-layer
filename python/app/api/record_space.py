@@ -61,16 +61,18 @@ class RecordSpace(Resource):
                     return {"error": "Internal Server Error", "message": "Failed to set user permissions"}, 500
 
             # Upload helper file to user dir
-            helper_path = os.path.join("python", "data", "instructions.txt")
+            helper_filename = getattr(Config, "HELPER_FILENAME", "instructions.md")
+            helper_path = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "data", helper_filename))
+            helper_upload_dir = getattr(Config, "HELPER_UPLOAD_DIR", user_dir)
 
             if not os.path.isfile(helper_path):
-                logging.error("instructions.txt not found at %s", helper_path)
-                return {"error": "Internal Server Error", "message": "instructions.txt not found on server"}, 500
+                logging.error("%s not found at %s", helper_filename, helper_path)
+                return {"error": "Internal Server Error", "message": f"{helper_filename} not found on server"}, 500
 
-            upload_response = webdav_client.upload_file(user_dir, helper_path)
+            upload_response = webdav_client.upload_file(helper_upload_dir, helper_path)
             if upload_response.get('status') not in [200, 201, 204]:
-                logging.error("Failed to upload instructions.txt (status %s)", upload_response.get('status'))
-                return {"error": "Internal Server Error", "message": "Failed to upload instructions.txt"}, 500
+                logging.error("Failed to upload %s (status %s)", helper_filename, upload_response.get('status'))
+                return {"error": "Internal Server Error", "message": f"Failed to upload {helper_filename}"}, 500
 
             success_response = {
                 'success': 'POST',
