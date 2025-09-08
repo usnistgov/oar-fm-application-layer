@@ -19,3 +19,5 @@ class Config:
     CLIENT_KEY_PATH = os.environ.get("CLIENT_KEY_PATH")
     SERVER_CA_PATH = os.environ.get("SERVER_CA_PATH")
     NEXTCLOUD_ADMIN_USER = os.environ.get("NEXTCLOUD_ADMIN_USER")
+    HELPER_FILENAME = os.environ.get("HELPER_FILENAME")
+    HELPER_UPLOAD_DIR = os.environ.get("HELPER_UPLOAD_DIR")
